@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>💙 灰蓝组配对生字练习</title>
+<style>
+  :root{--bg:#eef3f8;--card:#fff;--accent:#5a8ca5;--muted:#555}
+  *{box-sizing:border-box}
+  body{font-family:"Microsoft YaHei",Arial,sans-serif;background:var(--bg);margin:0;padding:20px;color:#222;display:flex;flex-direction:column;align-items:center}
+  h1{color:var(--accent);margin:6px 0}
+  .container{width:100%;max-width:760px;background:var(--card);border-radius:12px;padding:18px;box-shadow:0 8px 30px rgba(0,0,0,0.06)}
+  .top{display:flex;align-items:center;gap:12px}
+  .score{font-weight:700}
+  .controls{margin-left:auto;display:flex;gap:8px;align-items:center}
+  .small{background:transparent;color:var(--accent);border:1px solid rgba(0,0,0,0.06);padding:6px 10px;border-radius:8px;cursor:pointer}
+
+  .game{display:flex;gap:20px;margin-top:14px;flex-wrap:wrap}
+  .pool{flex:1;min-width:220px}
+  .targets{flex:1;min-width:320px}
+
+  .pool-grid{display:flex;flex-wrap:wrap;gap:10px;padding:12px;background:linear-gradient(180deg,#f6f9fc,#edf3f8);border-radius:10px}
+  .card{width:64px;height:64px;border-radius:10px;background:linear-gradient(180deg,#bcd1de,#86a6b8);display:flex;align-items:center;justify-content:center;font-size:26px;cursor:grab;user-select:none;color:#fff;font-weight:600;border:2px solid rgba(0,0,0,0.06)}
+  .card.placed{opacity:0.4;cursor:default}
+
+  .target-list{display:flex;flex-direction:column;gap:12px}
+  .target{display:flex;align-items:center;gap:14px;padding:10px;border-radius:10px;background:#fff;border:1px solid #dbe5eb}
+  .drop{min-width:160px;height:56px;border-radius:8px;border:2px dashed rgba(0,0,0,0.06);display:flex;align-items:center;justify-content:center;background:linear-gradient(180deg,#f8fafb,#f0f4f6);font-size:18px}
+  .drop.correct{box-shadow:0 6px 18px rgba(90,140,165,0.25);border-color:var(--accent)}
+  .drop.wrong{animation:shake .6s}
+  @keyframes shake{20%{transform:translateX(-6px)}40%{transform:translateX(6px)}60%{transform:translateX(-4px)}80%{transform:translateX(4px)}100%{transform:none}}
+  .pinyin{color:var(--muted);font-size:13px}
+
+  .stat{margin-top:12px;height:10px;background:linear-gradient(90deg,#dce9f1,#e8f2f8);border-radius:8px;overflow:hidden}
+  .stat > i{display:block;height:100%;width:0;background:linear-gradient(90deg,#86a6b8,#5a8ca5)}
+
+  .footer{margin-top:14px;text-align:center;color:var(--muted);font-size:13px}
+  @media(max-width:720px){.game{flex-direction:column}.targets{min-width:unset}}
+</style>
+</head>
+<body>
+  <h1>💙 灰蓝组配对生字练习</h1>
+  <div class="container">
+    <div class="top">
+      <div class="score">得分：<span id="score">0</span> / 6</div>
+      <div class="controls">
+        <button id="hintBtn" class="small">提示</button>
+        <button id="showBtn" class="small">显示答案</button>
+        <button id="resetBtn" class="small">重置</button>
+      </div>
+    </div>
+
+    <div class="game">
+      <div class="pool">
+        <div style="font-weight:700;margin-bottom:8px">可拖入的字</div>
+        <div id="pool" class="pool-grid"></div>
+      </div>
+      <div class="targets">
+        <div style="font-weight:700;margin-bottom:8px">把正确字拖到空格里</div>
+        <div id="targets" class="target-list"></div>
+      </div>
+    </div>
+
+    <div class="stat"><i id="statFill" style="width:0%"></i></div>
+    <div class="footer">提示：点击字卡可朗读；手机上可先点字再点空格完成填入。</div>
+  </div>
+
+<script>
+// 六个词语
+const QUESTIONS = [
+  {word:'那个', head:'那', expect:'个', pinyin:'nà gè'},
+  {word:'多少', head:'多', expect:'少', pinyin:'duō shǎo'},
+  {word:'颗粒', head:'颗', expect:'粒', pinyin:'kē lì'},
+  {word:'中间', head:'中', expect:'间', pinyin:'zhōng jiān'},
+  {word:'靠近', head:'靠', expect:'近', pinyin:'kào jìn'},
+  {word:'母亲', head:'母', expect:'亲', pinyin:'mǔ qīn'}
+];
+
+let poolChars = QUESTIONS.map(q=>q.expect).slice();
+shuffle(poolChars);
+let placed = 0; let score = 0;
+const poolEl = document.getElementById('pool');
+const targetsEl = document.getElementById('targets');
+const scoreEl = document.getElementById('score');
+const statFill = document.getElementById('statFill');
+
+// 使用 Google 普通话语音
+function speakText(text){
+  const synth = window.speechSynthesis;
+  const utter = new SpeechSynthesisUtterance(text);
+  utter.lang = 'zh-CN';
+  utter.voice = synth.getVoices().find(v=>v.lang==='zh-CN' && v.name.includes('Google')) || synth.getVoices().find(v=>v.lang==='zh-CN');
+  synth.cancel();
+  synth.speak(utter);
+}
+
+function renderPool(){
+  poolEl.innerHTML = '';
+  poolChars.forEach((ch, idx)=>{
+    const d = document.createElement('div');
+    d.className='card'; d.textContent = ch; d.id = 'card-'+idx; d.draggable = true;
+    d.addEventListener('dragstart', e=>{ e.dataTransfer.setData('text/plain', ch); });
+    d.addEventListener('click', ()=>{ if(d.classList.contains('placed')) return; speakText(ch);
+      document.querySelectorAll('.card').forEach(x=>x.classList.remove('selected'));
+      d.classList.add('selected');
+    });
+    poolEl.appendChild(d);
+  });
+}
+
+function renderTargets(){
+  targetsEl.innerHTML = '';
+  QUESTIONS.forEach((q,i)=>{
+    const row = document.createElement('div');
+    row.className='target';
+    const label = document.createElement('div');
+    label.style.width='90px'; label.style.fontSize='18px'; label.textContent = q.head + '（　）';
+    const drop = document.createElement('div');
+    drop.className='drop'; drop.dataset.expect = q.expect; drop.dataset.index = i;
+    const pin = document.createElement('div');
+    pin.className='pinyin'; pin.textContent = q.pinyin; pin.style.marginLeft='6px';
+
+    drop.addEventListener('dragover', e=> e.preventDefault());
+    drop.addEventListener('drop', e=>{
+      e.preventDefault();
+      const ch = e.dataTransfer.getData('text/plain');
+      handlePlace(ch, drop);
+    });
+    drop.addEventListener('click', ()=>{
+      const sel = document.querySelector('.card.selected');
+      if(sel && !sel.classList.contains('placed')){
+        handlePlace(sel.textContent, drop);
+        sel.classList.remove('selected');
+      }
+    });
+
+    row.appendChild(label);
+    row.appendChild(drop);
+    row.appendChild(pin);
+    targetsEl.appendChild(row);
+  });
+}
+
+function handlePlace(ch, drop){
+  if(!ch) return;
+  const expect = drop.dataset.expect;
+  const existingStrong = drop.querySelector('strong');
+  if(existingStrong){
+    const prev = existingStrong.textContent;
+    const prevEl = Array.from(document.querySelectorAll('.card'))
+      .find(x=>x.textContent===prev && x.classList.contains('placed'));
+    if(prevEl){ prevEl.classList.remove('placed'); prevEl.draggable=true; prevEl.style.display='inline-flex'; }
+  }
+  if(ch === expect){
+    const idx = parseInt(drop.dataset.index,10);
+    drop.innerHTML = QUESTIONS[idx].head + '（' + '<strong>' + ch + '</strong>' + '）';
+    const card = Array.from(document.querySelectorAll('.card')).find(x=>x.textContent===ch && !x.classList.contains('placed'));
+    if(card){ card.classList.add('placed'); card.draggable = false; }
+    drop.classList.add('correct'); setTimeout(()=>drop.classList.remove('correct'),700);
+    speakText(QUESTIONS[idx].word);
+    score++; placed++; updateScore(); updateStat(); if(placed===QUESTIONS.length){ celebrate(); }
+  } else {
+    drop.classList.add('wrong'); setTimeout(()=>drop.classList.remove('wrong'),700);
+    speakText('再想想');
+  }
+}
+
+function updateScore(){ scoreEl.textContent = score; }
+function updateStat(){ const pct = Math.round((placed / QUESTIONS.length) * 100); statFill.style.width = pct + '%'; }
+function shuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]] } return a; }
+function resetAll(){ poolChars = QUESTIONS.map(q=>q.expect); shuffle(poolChars); placed=0; score=0; updateScore(); updateStat(); renderPool(); renderTargets(); }
+function showAnswers(){ document.querySelectorAll('.drop').forEach(drop=>{ const idx = parseInt(drop.dataset.index,10); handlePlace(QUESTIONS[idx].expect, drop); }); }
+function hint(){ const empty = Array.from(document.querySelectorAll('.drop')).find(d=>!d.querySelector('strong')); if(!empty) return; const exp = empty.dataset.expect; const card = Array.from(document.querySelectorAll('.card')).find(c=>c.textContent===exp && !c.classList.contains('placed')); if(card){ card.classList.add('selected'); setTimeout(()=>card.classList.remove('selected'),900); } }
+function celebrate(){ speakText('太棒了，全都对了！'); document.querySelector('.container').style.boxShadow = '0 0 30px rgba(90,140,165,0.3)'; setTimeout(()=>document.querySelector('.container').style.boxShadow='',1000); }
+
+document.getElementById('hintBtn').addEventListener('click', hint);
+document.getElementById('showBtn').addEventListener('click', showAnswers);
+document.getElementById('resetBtn').addEventListener('click', resetAll);
+
+resetAll();
+</script>
+</body>
+</html>
